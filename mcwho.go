@@ -43,9 +43,11 @@ type mcuser struct {
 	since string // time logged on
 }
 
-type userList map[string]*mcuser
+type userList map[string]mcuser
 
-var	users = make(userList)
+// @@TODO: Lock these, or copy them to the rss goroutine
+var usersOn userList
+var usersOff userList
 
 // Command-line flags
 var logpath = flag.String("log-path", ".", "the location of the Minecraft server.log file")
@@ -54,8 +56,8 @@ func main() {
 	flag.Parse()
 
 	// Channels to communicate with the goroutine that watches the minecraft logfile:
-	conch := make(chan mcuser)
-	disch := make(chan mcuser)
+	conch := make(chan userList)
+	disch := make(chan userList)
 	errch := make(chan error)
 
 	// Start up our RSS server
@@ -65,13 +67,16 @@ func main() {
 	go Mcwho(path.Join(*logpath,"server.log"), conch, disch, errch)
 	for {
 		select {
-		case user := <-conch:
-			users[user.name] = &user
-			howLong, _ := getHowLong(user.since)
-			log.Printf("%s on for %s\n", user.name, howLong)
-		case user := <-disch:
-			delete(users, user.name)
-			log.Printf("%s disconnected %s\n", user.name, user.since)
+		case usersOn = <-conch:
+			for _, user := range usersOn {
+				howLong, _ := getHowLong(user.since)
+				log.Printf("%s on for %s\n", user.name, howLong)
+			}
+		case usersOff = <-disch:
+			for _, user := range usersOff {
+				howLong, _ := getHowLong(user.since)
+				log.Printf("%s off for %s\n", user.name, howLong)
+			}
 		case err := <-errch:
 			log.Fatal(err)
 		}
@@ -143,7 +148,7 @@ func rssServer(w http.ResponseWriter, req *http.Request) {
 </rss>
 `
 	t, err := template.New("feed").Parse(templateStr)
-	display := users.String()
+	display := usersOn.String()
 	fmt.Printf("RSS responds %s\n", display)
 	io.WriteString(w, xmlHdr)
 	err = t.ExecuteTemplate(w, "feed", display)
@@ -156,7 +161,7 @@ func rssServer(w http.ResponseWriter, req *http.Request) {
 // Mcwho: A goroutine that parses and then watches a minecraft server.log file to determine
 // who is connected.
 //
-func Mcwho(logPath string, conch chan mcuser, disch chan mcuser, errch chan error) {
+func Mcwho(logPath string, conch chan userList, disch chan userList, errch chan error) {
 	// Close the channel on exit so the program terminates.
 	defer close(conch)
 	watcher, err := setupWatcher(logPath)
@@ -166,25 +171,14 @@ func Mcwho(logPath string, conch chan mcuser, disch chan mcuser, errch chan erro
 	}
 	defer watcher.Close()
 
-	oldUsersOn := make(map[string]mcuser)
 	for {
-		usersOn, err := readLog(logPath)
+		usersOn, usersOff, err := readLog(logPath)
 		if err != nil {
 			errch <- err
 			return
 		}
-		for _, user := range usersOn {
-			conch <- user
-			oldUsersOn[user.name] = user
-		}
-		for _, user := range oldUsersOn {
-			// if a user is in the old map but not the new one, they've disconnected
-			if _, ok := usersOn[user.name]; ok == false {
-				// TODO: Update the timestamp to now, so we can tell when they disconnected
-				disch <- user
-				delete(oldUsersOn, user.name)
-			}
-		}
+		conch <- usersOn
+		disch <- usersOff
 
 		select {
 		case /*ev :=*/ <-watcher.Event:
@@ -218,18 +212,18 @@ func setupWatcher(logPath string) (*fsnotify.Watcher, error) {
 //
 var logonre, logoutre *regexp.Regexp
 var pos int64					// Keep track of how far we've read.
-func readLog(logPath string) (usersOn map[string]mcuser, err error) {
+func readLog(logPath string) (usersOn userList, usersOff userList, err error) {
 	// open the log file and jump to our current location, then we'll scan it
 	// one line at a time.
 	logf, err := os.Open(logPath)
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	defer logf.Close()
 	// See if the file has shrunk. If so, read from the beginning.
 	fi, err := logf.Stat()
 	if err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	if fi.Size() < pos {
 		pos = 0
@@ -241,19 +235,22 @@ func readLog(logPath string) (usersOn map[string]mcuser, err error) {
 
 	// The first time around, compile the regular expressions.
 	if logonre == nil {
-		logonre = regexp.MustCompile(`^([0-9\-]+ [0-9:]+) \[.*\] ([^ ]+) \[.*\] logged in`)
-		logoutre = regexp.MustCompile(`^([0-9\-]+ [0-9:]+) \[.*\] ([^ ]+) lost connection`)
+		logonre = regexp.MustCompile(`^([0-9\-]+ [0-9:]+) \[.*\] ([^ ]+) ?\[.*\] logged in`)
+		logoutre = regexp.MustCompile(`^([0-9\-]+ [0-9:]+) \[.*\] ([^ ]+) lost connection:`)
 	}
 
-	usersOn = make(map[string]mcuser)
+	usersOn = make(userList)
+	usersOff = make(userList)
 	for err == nil {
 		line := ""
 		line, err = rdr.ReadString('\n')
 		if matches := logonre.FindStringSubmatch(line); matches != nil {
 			//log.Printf("User %s logged in at %s\n", matches[2], matches[1])
 			usersOn[matches[2]] = mcuser{matches[2], matches[1]}
+			delete(usersOff, matches[2])
 		} else if matches := logoutre.FindStringSubmatch(line); matches != nil {
 			//log.Printf("User %s logged out at %s\n", matches[2], matches[1])
+			usersOff[matches[2]] = mcuser{matches[2], matches[1]}
 			delete(usersOn, matches[2])
 		}
 	}
@@ -261,7 +258,7 @@ func readLog(logPath string) (usersOn map[string]mcuser, err error) {
 	// where are we?
 	pos, err = rs.Seek(0, os.SEEK_CUR)
 
-	return usersOn, err
+	return usersOn, usersOff, err
 }
 
 //
@@ -281,11 +278,15 @@ func getHowLong(since string) (string, error) {
 
 	dur := time.Now().Sub(ts)
 
-	hours := int(dur.Hours())
+	days  := int(dur.Hours())   / 24
+	hours := int(dur.Hours())   % 24
 	mins  := int(dur.Minutes()) % 60
 	secs  := int(dur.Seconds()) % 60
 
 	str := ""
+	if days > 0 {
+		str += fmt.Sprintf("%dd ", days)
+	}
 	if hours > 0 {
 		str += fmt.Sprintf("%dh ", hours)
 	}
