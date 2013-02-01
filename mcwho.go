@@ -39,8 +39,8 @@ import (
 )
 
 type mcuser struct {
-	name  string // user name
-	since string // time logged on
+	name  string      // user name
+	since time.Time   // time logged on or off
 }
 
 type userList map[string]mcuser
@@ -88,13 +88,13 @@ func main() {
 // is of the format, "3 players: happy on for 1h, dopey on for 32s, lucky on
 // for 2d"
 //
-func (p *userList) String() string {
-	userInfo := make([]string, len(*p))
+func getDisplay(usersOn userList, usersOff userList) string {
+	userInfo := make([]string, len(usersOn))
 	hdr   := "No players"
 	str   := ""
 	count := 0
 
-	for _, user := range *p {
+	for _, user := range usersOn {
 		howLong, _ := getHowLong(user.since)
 		userInfo[count] = fmt.Sprintf("%s on for %s", user.name, howLong)
 		count++
@@ -102,7 +102,19 @@ func (p *userList) String() string {
 
 	switch {
 	case count < 1:
-		hdr = "No players"
+		var lastUser mcuser
+		for _, user := range usersOff {
+			if user.since.After(lastUser.since) {
+				lastUser = user
+			}
+		}
+		howLong, _ := getHowLong(lastUser.since)
+		if lastUser.since.IsZero() {
+			lastUser.name = "nobody"
+			howLong = "ever"
+		}
+			
+		hdr = fmt.Sprintf("No players for %s (%s)", howLong, lastUser.name)
 	case count == 1:
 		hdr = "1 player: "
 	default:
@@ -148,7 +160,7 @@ func rssServer(w http.ResponseWriter, req *http.Request) {
 </rss>
 `
 	t, err := template.New("feed").Parse(templateStr)
-	display := usersOn.String()
+	display := getDisplay(usersOn, usersOff)
 	fmt.Printf("RSS responds %s\n", display)
 	io.WriteString(w, xmlHdr)
 	err = t.ExecuteTemplate(w, "feed", display)
@@ -246,11 +258,13 @@ func readLog(logPath string) (usersOn userList, usersOff userList, err error) {
 		line, err = rdr.ReadString('\n')
 		if matches := logonre.FindStringSubmatch(line); matches != nil {
 			//log.Printf("User %s logged in at %s\n", matches[2], matches[1])
-			usersOn[matches[2]] = mcuser{matches[2], matches[1]}
+			since, _ := parseSince(matches[1])
+			usersOn[matches[2]] = mcuser{matches[2], since}
 			delete(usersOff, matches[2])
 		} else if matches := logoutre.FindStringSubmatch(line); matches != nil {
 			//log.Printf("User %s logged out at %s\n", matches[2], matches[1])
-			usersOff[matches[2]] = mcuser{matches[2], matches[1]}
+			since, _ := parseSince(matches[1])
+			usersOff[matches[2]] = mcuser{matches[2], since}
 			delete(usersOn, matches[2])
 		}
 	}
@@ -262,19 +276,24 @@ func readLog(logPath string) (usersOn userList, usersOff userList, err error) {
 }
 
 //
-// The logfiles tell us when someone logged in. From that, figure out how long
-// they've been on and return that information in the form of a string like
-// "1h 34m", or "34s" if the user has been on for less than a minute.
+// Parse the time string from a Minecraft logfile into a Time value.
 //
-func getHowLong(since string) (string, error) {
+func parseSince(since string) (time.Time, error) {
 	// We need to add the local time zone to the string we're parsing, or else
 	// the parser will assume it's UTC.
 	zone, _ := time.Now().Zone()
 	since = fmt.Sprintf("%s %s", since, zone)
 	ts, err := time.Parse("2006-01-02 15:04:05 MST", since)
-	if err != nil {
-		return "???", err
-	}
+	
+	return ts, err
+}
+
+//
+// The logfiles tell us when someone logged in. From that, figure out how long
+// they've been on and return that information in the form of a string like
+// "1h 34m", or "34s" if the user has been on for less than a minute.
+//
+func getHowLong(ts time.Time) (string, error) {
 
 	dur := time.Now().Sub(ts)
 
