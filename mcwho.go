@@ -56,9 +56,11 @@ func main() {
 	flag.Parse()
 
 	// Channels to communicate with the goroutine that watches the minecraft logfile:
-	conch := make(chan userList)
-	disch := make(chan userList)
+	conch := make(chan mcuser)
+	disch := make(chan mcuser)
 	errch := make(chan error)
+	
+	var user mcuser
 
 	// Start up our RSS server
 	go startRssServer()
@@ -67,16 +69,12 @@ func main() {
 	go Mcwho(path.Join(*logpath,"server.log"), conch, disch, errch)
 	for {
 		select {
-		case usersOn = <-conch:
-			for _, user := range usersOn {
-				howLong, _ := getHowLong(user.since)
-				log.Printf("%s on for %s\n", user.name, howLong)
-			}
-		case usersOff = <-disch:
-			for _, user := range usersOff {
-				howLong, _ := getHowLong(user.since)
-				log.Printf("%s off for %s\n", user.name, howLong)
-			}
+		case user = <-conch:
+			delete(usersOff, user.name)
+			usersOn[user.name] = user
+		case user = <-disch:
+			delete(usersOn, user.name)
+			usersOff[user.name] = user
 		case err := <-errch:
 			log.Fatal(err)
 		}
@@ -173,7 +171,7 @@ func rssServer(w http.ResponseWriter, req *http.Request) {
 // Mcwho: A goroutine that parses and then watches a minecraft server.log file to determine
 // who is connected.
 //
-func Mcwho(logPath string, conch chan userList, disch chan userList, errch chan error) {
+func Mcwho(logPath string, conch chan mcuser, disch chan mcuser, errch chan error) {
 	// Close the channel on exit so the program terminates.
 	defer close(conch)
 	watcher, err := setupWatcher(logPath)
@@ -184,13 +182,11 @@ func Mcwho(logPath string, conch chan userList, disch chan userList, errch chan 
 	defer watcher.Close()
 
 	for {
-		usersOn, usersOff, err := readLog(logPath)
+		err := readLog(logPath, conch, disch)
 		if err != nil {
 			errch <- err
 			return
 		}
-		conch <- usersOn
-		disch <- usersOff
 
 		select {
 		case /*ev :=*/ <-watcher.Event:
@@ -224,18 +220,18 @@ func setupWatcher(logPath string) (*fsnotify.Watcher, error) {
 //
 var logonre, logoutre *regexp.Regexp
 var pos int64					// Keep track of how far we've read.
-func readLog(logPath string) (usersOn userList, usersOff userList, err error) {
+func readLog(logPath string, conch chan mcuser, disch chan mcuser) (err error) {
 	// open the log file and jump to our current location, then we'll scan it
 	// one line at a time.
 	logf, err := os.Open(logPath)
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	defer logf.Close()
 	// See if the file has shrunk. If so, read from the beginning.
 	fi, err := logf.Stat()
 	if err != nil {
-		return nil, nil, err
+		return err
 	}
 	if fi.Size() < pos {
 		pos = 0
@@ -259,20 +255,18 @@ func readLog(logPath string) (usersOn userList, usersOff userList, err error) {
 		if matches := logonre.FindStringSubmatch(line); matches != nil {
 			//log.Printf("User %s logged in at %s\n", matches[2], matches[1])
 			since, _ := parseSince(matches[1])
-			usersOn[matches[2]] = mcuser{matches[2], since}
-			delete(usersOff, matches[2])
+			conch <- mcuser{matches[2], since}
 		} else if matches := logoutre.FindStringSubmatch(line); matches != nil {
 			//log.Printf("User %s logged out at %s\n", matches[2], matches[1])
 			since, _ := parseSince(matches[1])
-			usersOff[matches[2]] = mcuser{matches[2], since}
-			delete(usersOn, matches[2])
+			disch <- mcuser{matches[2], since}
 		}
 	}
 
 	// where are we?
 	pos, err = rs.Seek(0, os.SEEK_CUR)
 
-	return usersOn, usersOff, err
+	return err
 }
 
 //
