@@ -54,6 +54,10 @@ var logpath = flag.String("log-path", ".", "the location of the Minecraft server
 
 func main() {
 	flag.Parse()
+	
+	// Make the maps
+	usersOn = make(userList)
+	usersOff = make(userList)
 
 	// Channels to communicate with the goroutine that watches the minecraft logfile:
 	conch := make(chan mcuser)
@@ -168,8 +172,8 @@ func rssServer(w http.ResponseWriter, req *http.Request) {
 }
 
 //
-// Mcwho: A goroutine that parses and then watches a minecraft server.log file to determine
-// who is connected.
+// Mcwho: A goroutine that parses and then watches a minecraft server.log file
+// to determine who is connected.
 //
 func Mcwho(logPath string, conch chan mcuser, disch chan mcuser, errch chan error) {
 	// Close the channel on exit so the program terminates.
@@ -190,7 +194,6 @@ func Mcwho(logPath string, conch chan mcuser, disch chan mcuser, errch chan erro
 
 		select {
 		case /*ev :=*/ <-watcher.Event:
-			//log.Println("Event!", ev)
 			// naught to do but loop again
 		case err := <-watcher.Error:
 			errch <- err
@@ -247,8 +250,6 @@ func readLog(logPath string, conch chan mcuser, disch chan mcuser) (err error) {
 		logoutre = regexp.MustCompile(`^([0-9\-]+ [0-9:]+) \[.*\] ([^ ]+) lost connection:`)
 	}
 
-	usersOn = make(userList)
-	usersOff = make(userList)
 	for err == nil {
 		line := ""
 		line, err = rdr.ReadString('\n')
