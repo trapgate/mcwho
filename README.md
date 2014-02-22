@@ -8,7 +8,7 @@ I run a small Minecraft server for friends. I also have a Logitech Squeezebox (w
 
 ##Building the Program:
 
-mcwho is written in Go, because I wanted to try out the language. Head to http://golang.org if you need the compiler. The current version is built using Go 1.0. I'm using Google's compiler, gccgo 4.7.1 or later will also work (and produces much smaller binaries). Also, I run my Minecraft server on Linux. I haven't tested this program on Windows or OSX. It should work, but it may not.
+mcwho is written in Go, because I wanted to try out the language. Head to http://golang.org if you need the compiler. The current version is built using Go 1.2. I'm using Google's compiler, gccgo 4.7.1 or later will also work (and produces much smaller binaries). Also, I run my Minecraft server on Linux. I haven't tested this program on Windows or OSX. It should work, but it may not.
 
 mcwho uses fsnotify for file change notifications. The fsnotify project is hosted on github. You'll need to execute 
     go get github.com/howeyc/fsnotify 
@@ -22,7 +22,7 @@ If you've set up your GOPATH correctly, just switch into src/mcwho and type:
 
 There's only one command-line switch at the moment, which is used to specify the directory that contains the Minecraft server log file. So to start mcwho:
 
-    ./mcwho --log-path /home/minecraft/minecraft
+    ./mcwho --log-path /home/minecraft/minecraft/logs
 
 You may also want to set mcwho up to start automatically when your server boots. If you're on Ubuntu you can use the included file mcwho.conf, which is an upstart configuration file. Edit this file if you need to, then place it in /etc/init, and type this command as root:
 
@@ -38,7 +38,7 @@ If you happen to have a Squeezebox of your own, here's how to set it up to displ
 
 ##How it Works:
 
-Minecraft servers create a log file, server.log. mcwho runs on the Minecraft server, and parses the log file to determine who is currently logged in, and how long they've been playing. It combines all the logged in users into a single RSS feed, which it serves at this address:
+Minecraft servers create a log file in the logs/ directory, latest.log, which is zipped and renamed with a date stamp every day. mcwho runs on the Minecraft server, and parses the log files to determine who is currently logged in, and how long they've been playing. It combines all the logged in users into a single RSS feed, which it serves at this address:
 
     http://servername:9092/mcwhorss
 
