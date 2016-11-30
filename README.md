@@ -8,13 +8,13 @@ I run a small Minecraft server for friends. I also have a Logitech Squeezebox (w
 
 ##Building the Program:
 
-mcwho is written in Go, because I wanted to try out the language. Head to http://golang.org if you need the compiler. The current version is built using Go 1.2. I'm using Google's compiler, gccgo 4.7.1 or later will also work (and produces much smaller binaries). Also, I run my Minecraft server on Linux. I haven't tested this program on Windows or OSX. It should work, but it may not.
+mcwho is written in Go, because I wanted to try out the language. Head to http://golang.org if you need the compiler. The current version is built using Go 1.7. I'm using Google's compiler, gccgo will also work (and produces much smaller binaries). Also, I run my Minecraft server on Linux. I haven't tested this program on Windows or OSX. It should work, but it may not.
 
-mcwho uses fsnotify for file change notifications. The fsnotify project is hosted on github. You'll need to execute 
-    go get github.com/howeyc/fsnotify 
+mcwho uses fsnotify for file change notifications. The fsnotify project is hosted on github. You'll need to execute
+    go get github.com/howeyc/fsnotify
 before you can build mcwho.
 
-If you've set up your GOPATH correctly, just switch into src/mcwho and type: 
+If you've set up your GOPATH correctly, just switch into src/mcwho and type:
 
     go build
 
