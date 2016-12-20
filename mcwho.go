@@ -95,8 +95,8 @@ func main() {
 //
 func getDisplay(usersOn userList, usersOff userList) string {
 	userInfo := make([]string, len(usersOn))
-	hdr := "No players"
-	str := ""
+	var hdr string
+	var str string
 	count := 0
 
 	for _, user := range usersOn {
@@ -162,20 +162,18 @@ func rssServer(w http.ResponseWriter, req *http.Request) {
 </channel>
 </rss>
 `
-	t, err := template.New("feed").Parse(templateStr)
+	t, _ := template.New("feed").Parse(templateStr)
 	display := getDisplay(usersOn, usersOff)
 	fmt.Printf("RSS responds %s\n", display)
 	io.WriteString(w, xmlHdr)
-	err = t.ExecuteTemplate(w, "feed", display)
+	err := t.ExecuteTemplate(w, "feed", display)
 	if err != nil {
 		log.Fatal(err)
 	}
 }
 
-//
-// Mcwho: A goroutine that parses and then watches a minecraft server.log file
+// Mcwho is a goroutine that parses and then watches a minecraft server.log file
 // to determine who is connected.
-//
 func Mcwho(logPath string, conch chan mcuser, disch chan mcuser, errch chan error) {
 	// Close the channel on exit so the program terminates.
 	defer close(conch)
@@ -200,7 +198,7 @@ func Mcwho(logPath string, conch chan mcuser, disch chan mcuser, errch chan erro
 			continue
 		}
 		logFile := path.Join(logPath, file.Name())
-		fmt.Println("reading log ", logFile)
+		fmt.Println("reading log", logFile)
 		err := readLog(logFile, conch, disch)
 		if err != nil {
 			fmt.Printf("Error reading log file %s: %s\n", logFile, err)
@@ -296,7 +294,7 @@ func readLog(logfile string, conch chan mcuser, disch chan mcuser) (err error) {
 	// The first time around, compile the regular expressions.
 	if logonre == nil {
 		datere = regexp.MustCompile(`(\d+-\d+-\d+)`)
-		logonre = regexp.MustCompile(`^\[([0-9:]+)\] \[.*\]: ([^\[ ]+)\[.*\] joined the game`)
+		logonre = regexp.MustCompile(`^\[([0-9:]+)\] \[.*\]: (\S+)\[.*\] logged in with entity id`)
 		logoutre = regexp.MustCompile(`^\[([0-9:]+)\] \[.*\]: (\S+) lost connection:`)
 	}
 
@@ -315,14 +313,14 @@ func readLog(logfile string, conch chan mcuser, disch chan mcuser) (err error) {
 	}
 
 	for err == nil {
-		line := ""
+		var line string
 		line, err = rdr.ReadString('\n')
 		if matches := logonre.FindStringSubmatch(line); matches != nil {
-			//log.Printf("User %s logged in at %s %s\n", matches[2], date, matches[1])
+			// log.Printf("User %s logged in at %s %s\n", matches[2], date, matches[1])
 			since, _ := parseSince(date + " " + matches[1])
 			conch <- mcuser{matches[2], since}
 		} else if matches := logoutre.FindStringSubmatch(line); matches != nil {
-			//log.Printf("User %s logged out at %s %s\n", matches[2], date, matches[1])
+			// log.Printf("User %s logged out at %s %s\n", matches[2], date, matches[1])
 			since, _ := parseSince(date + " " + matches[1])
 			disch <- mcuser{matches[2], since}
 		}
