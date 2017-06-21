@@ -1,12 +1,12 @@
-#mcwho
+# mcwho
 
 For Minecraft servers, mcwho creates an RSS feed containing each logged on user, and how long they've been on.
 
-##Background:
+## Background:
 
 I run a small Minecraft server for friends. I also have a Logitech Squeezebox (which is a networked music player) in my living room. One day, while looking up at its fluorescent display, I decided it'd be neat if the Squeezebox could display a list of who was logged into the Minecraft server. And so mcwho was born.
 
-##Building the Program:
+## Building the Program:
 
 mcwho is written in Go, because I wanted to try out the language. Head to http://golang.org if you need the compiler. The current version is built using Go 1.7. I'm using Google's compiler, gccgo will also work (and produces much smaller binaries). Also, I run my Minecraft server on Linux. I haven't tested this program on Windows or OSX. It should work, but it may not.
 
@@ -18,7 +18,7 @@ If you've set up your GOPATH correctly, just switch into src/mcwho and type:
 
     go build
 
-##Running the program
+## Running the program
 
 There's only one command-line switch at the moment, which is used to specify the directory that contains the Minecraft server log file. So to start mcwho:
 
@@ -36,7 +36,7 @@ If you happen to have a Squeezebox of your own, here's how to set it up to displ
 
 (Change myserver to the name or IP address of your Minecraft server).
 
-##How it Works:
+## How it Works:
 
 Minecraft servers create a log file in the logs/ directory, latest.log, which is zipped and renamed with a date stamp every day. mcwho runs on the Minecraft server, and parses the log files to determine who is currently logged in, and how long they've been playing. It combines all the logged in users into a single RSS feed, which it serves at this address:
 
